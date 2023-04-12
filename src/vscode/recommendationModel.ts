@@ -6,12 +6,12 @@ export interface RecommendationModel {
 }
 
 export interface Recommendation {
+    sourceId: string,
     extensionId: string, 
     extensionDisplayName: string,
     description: string, 
-    sourceId: string,
-    timestamp: number,
     shouldShowOnStartup: boolean,
+    timestamp: number,
     userIgnored: boolean,
 }
 

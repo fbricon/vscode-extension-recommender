@@ -14,13 +14,23 @@ export const isExtensionInstalled = (id: string): boolean => {
     return !!extensions.getExtension(id);
 }
 
+export const getInstalledExtensionName = (id: string): string | undefined => {
+    if( isExtensionInstalled(id)) {
+        const e = extensions.getExtension(id);
+        if( e ) {
+            return e.packageJSON.displayName || e.packageJSON.extensionDisplayName;
+        }
+    }
+    return undefined;
+}
+
 /**
  * Install an extension
  *
  * @returns when the extension is installed
  * @throws if the user refuses to install the extension, or if the extension does not get installed within a timeout period
  */
- export const installExtensionUtil = async (id: string, label: string, timeout: number): Promise<void> => {
+ export const installExtensionUtil = async (id: string, extensionDisplayName: string, timeout: number): Promise<void> => {
     let installListenerDisposable: Disposable;
     return new Promise<void>((resolve, reject) => {
         installListenerDisposable = extensions.onDidChange(() => {
@@ -30,7 +40,7 @@ export const isExtensionInstalled = (id: string): boolean => {
         });
         commands.executeCommand("workbench.extensions.installExtension", id)
                 .then((_unused: any) => { }, reject);
-        setTimeout(reject, timeout, new Error(`'${label}' installation is taking a while, Cancelling!`));
+        setTimeout(reject, timeout, new Error(`'${extensionDisplayName}' installation is taking a while, Cancelling!`));
     }).finally(() => {  
         installListenerDisposable.dispose();
     });

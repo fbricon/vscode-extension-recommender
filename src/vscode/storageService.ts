@@ -1,11 +1,11 @@
 import { Recommendation, RecommendationModel } from "./recommendationModel";
 
 export interface IStorageService {
-    // /**
-    //  * Return the recommendation model from the backing store, 
-    //  * or undefined if it does not exist
-    //  */
-    // load(): Promise<RecommendationModel|undefined>;
+    /**
+     * Return the recommendation model from the backing store, 
+     * or undefined if it does not exist
+     */
+    read(): Promise<RecommendationModel|undefined>;
 
     // /**
     //  * Save the given model in the backing store

@@ -16,13 +16,24 @@ export class StorageServiceImpl implements IStorageService {
         }
     }
 
-    /*
-     * Since this npm module may be used by multiple extensions, 
-     * it may be useful to create a lock file for when an 
-     * extension attempts to add or remove anything to the model
+    private async delay(ms: number): Promise<void> {
+        await new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    /**
+     * Run a given runnable while ensuring only 1 client can write to the data store at a time.
+     * @returns boolean - whether vscode is in a new session vs what the data store thought
      */
     public async runWithLock(runnable: (model: RecommendationModel) => Promise<RecommendationModel>): Promise<boolean> {
         // TODO if we are locked, wait for unlock
+        let waited = 0;
+        while(this.isLocked() && waited < 10000) {
+            await this.delay(100);
+            waited += 100;
+        }
+        if( waited >= 10000 || this.isLocked()) {
+            return Promise.reject("Unable to get a lock on recommendations file");
+        }
         this.lock();
         try {
             const model: RecommendationModel = await this.loadOrDefault();
@@ -34,7 +45,8 @@ export class StorageServiceImpl implements IStorageService {
     }
 
     private async lock(): Promise<void> {
-        await this.writeToFile(StorageServiceImpl.LOCK_FILENAME, ""+Date.now());
+        const file = this.resolvePath(StorageServiceImpl.LOCK_FILENAME);
+        await this.writeToFile(file, ""+Date.now());
     }
     private async unlock(): Promise<void> {
         const file = this.resolvePath(StorageServiceImpl.LOCK_FILENAME);
@@ -42,6 +54,15 @@ export class StorageServiceImpl implements IStorageService {
             fs.unlinkSync(file);
         }
     }
+    private isLocked(): boolean {
+        const file = this.resolvePath(StorageServiceImpl.LOCK_FILENAME);
+        return fs.existsSync(file);
+    }
+
+    public async read(): Promise<RecommendationModel | undefined> {
+        return this.load();
+    }
+
     private async load(): Promise<RecommendationModel | undefined> {
         const json = await this.readFromFile(StorageServiceImpl.PERSISTENCE_FILENAME);
         if (json) {

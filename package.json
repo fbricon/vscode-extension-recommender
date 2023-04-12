@@ -6,6 +6,8 @@
   "types": "lib",
   "scripts": {
     "prepublish": "npm run compile",
+    "build": "npm run clean && npm run compile",
+    "clean": "rm -rf lib || rmdir lib /s /q",
     "compile": "tsc -p .",
     "coverage": "nyc -r lcov -e .ts -x \"*.ts\" npm run test",
     "test": "mocha -r ts-node/register --ui tdd \"src/tests/**/*.test.ts\""
