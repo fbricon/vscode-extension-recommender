@@ -4,7 +4,7 @@ import { RecommendationServiceImpl } from "./impl/recommendationServiceImpl";
 import { IRecommendationService } from "./recommendationService";
 
 export class RecommendationCore {
-    public getService(context: ExtensionContext, telemetryService?: TelemetryService): IRecommendationService {
+    public static getService(context: ExtensionContext, telemetryService?: TelemetryService): IRecommendationService {
         return new RecommendationServiceImpl(context, telemetryService);
     }
 

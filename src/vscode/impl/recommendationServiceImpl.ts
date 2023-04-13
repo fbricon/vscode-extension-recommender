@@ -20,7 +20,7 @@ export class RecommendationServiceImpl implements IRecommendationService {
         return path.resolve(context.globalStorageUri.fsPath, '..', 'vscode-extension-recommender');
     }
 
-    public async registerRecommendations(toAdd: Recommendation[]): Promise<void> {
+    public async register(toAdd: Recommendation[]): Promise<void> {
         const newSession: boolean = await this.addRecommendationsToModel(toAdd);
         if( newSession ) {
             // Return fast (ie, don't await) so as not to slow down caller
@@ -28,19 +28,45 @@ export class RecommendationServiceImpl implements IRecommendationService {
         }
     }
 
+    public create( sourceId: string,
+        extensionId: string, 
+        extensionDisplayName: string,
+        description: string, 
+        shouldShowOnStartup: boolean): Recommendation {
+            return {
+                sourceId: sourceId,
+                extensionId: extensionId, 
+                extensionDisplayName: extensionDisplayName,
+                description: description, 
+                shouldShowOnStartup: shouldShowOnStartup,
+                timestamp: Date.now(),
+                userIgnored: false
+            };
+        }
+
+
     public async addRecommendationsToModel(toAdd: Recommendation[]): Promise<boolean> {
         const newSession = await this.storageService.runWithLock(async (model: RecommendationModel): Promise<RecommendationModel> => {
             const current: Recommendation[] = model.recommendations;
             const newRecs: Recommendation[] = [];
+            const toAddAlreadyAdded: Recommendation[] = [];
             for( let i = 0; i < current.length; i++ ) {
                 const beingAdded = this.findRecommendation(current[i].sourceId, current[i].extensionId, toAdd);
                 if( beingAdded ) {
                     beingAdded.userIgnored = current[i].userIgnored;
                     newRecs.push(beingAdded);
+                    toAddAlreadyAdded.push(beingAdded);
                 } else {
                     newRecs.push(current[i]);
                 }
             }
+
+            for( let i = 0; i < toAdd.length; i++ ) {
+                if( !toAddAlreadyAdded.includes(toAdd[i])) {
+                    newRecs.push(toAdd[i]);
+                }
+            }
+            
             model.recommendations = newRecs;
             return model;
         });
@@ -57,7 +83,7 @@ export class RecommendationServiceImpl implements IRecommendationService {
         }
     }
     
-    public async showRecommendation(fromExtension: string, toExtension: string): Promise<void> {
+    public async show(fromExtension: string, toExtension: string): Promise<void> {
         // Show a single recommendation immediately
         if(isExtensionInstalled(fromExtension) && !isExtensionInstalled(toExtension)) {
             const model: RecommendationModel|undefined = await this.storageService.read();

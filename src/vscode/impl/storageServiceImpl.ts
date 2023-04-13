@@ -50,13 +50,15 @@ export class StorageServiceImpl implements IStorageService {
     }
     private async unlock(): Promise<void> {
         const file = this.resolvePath(StorageServiceImpl.LOCK_FILENAME);
-        if (!fs.existsSync(file)) {
+        if (fs.existsSync(file)) {
             fs.unlinkSync(file);
         }
     }
     private isLocked(): boolean {
         const file = this.resolvePath(StorageServiceImpl.LOCK_FILENAME);
-        return fs.existsSync(file);
+        const b = fs.existsSync(file);
+        console.log("Checking for lock on " + file + ": " + b);
+        return b;
     }
 
     public async read(): Promise<RecommendationModel | undefined> {
