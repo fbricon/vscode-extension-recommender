@@ -140,9 +140,11 @@ export class RecommendationServiceImpl implements IRecommendationService {
             const lines: string[] = [];
             lines.push(`${count} extensions recommend you install ${displayName}`);
             for( let i = 0; i < recommendationsForId.length; i++ ) {
-                const fromExtensionId = recommendationsForId[0].sourceId;
+                const fromExtensionId = recommendationsForId[i].sourceId;
                 const fromExtensionName = getInstalledExtensionName(fromExtensionId) || fromExtensionId;
-                const msg: string = `${fromExtensionName}: ${recommendationsForId[0].description}`
+                const desc = recommendationsForId[i].description;
+                const safeDescription = desc && desc.length > 0 ? desc : "No explanation specified";
+                const msg: string = `${fromExtensionName}: ${safeDescription}`
                 lines.push(msg);
             }
             const finalMsg = lines.join("\n");
