@@ -80,8 +80,8 @@ export class RecommendationServiceImpl implements IRecommendationService {
                 haystack[i].extensionId === needleTo ) {
                 return haystack[i];
             }
-            return undefined;
         }
+        return undefined;
     }
     
     public async show(fromExtension: string, toExtension: string): Promise<void> {
