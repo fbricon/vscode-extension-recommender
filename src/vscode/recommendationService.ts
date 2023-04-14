@@ -13,14 +13,12 @@ export interface IRecommendationService {
 
     /**
      * Create a recommendation
-     * @param sourceId
      * @param extensionId 
      * @param extensionDisplayName 
      * @param description 
      * @param shouldShowOnStartup 
      */
-    create( sourceId: string,
-        extensionId: string, 
+    create( extensionId: string, 
         extensionDisplayName: string,
         description: string, 
         shouldShowOnStartup: boolean): Recommendation; 

@@ -9,8 +9,10 @@ import { getInstalledExtensionName, isExtensionInstalled, promptUserUtil, instal
 
 export class RecommendationServiceImpl implements IRecommendationService {
     private storageService: IStorageService;
+    private extensionContext: ExtensionContext;
     private telemetryService: TelemetryService | undefined;
     constructor(context: ExtensionContext, telemetryService?: TelemetryService) {
+        this.extensionContext = context;
         this.telemetryService = telemetryService;
         const storagePath = this.getRecommendationWorkingDir(context);
         this.storageService = new StorageServiceImpl(storagePath);
@@ -28,13 +30,12 @@ export class RecommendationServiceImpl implements IRecommendationService {
         }
     }
 
-    public create( sourceId: string,
-        extensionId: string, 
+    public create(extensionId: string, 
         extensionDisplayName: string,
         description: string, 
         shouldShowOnStartup: boolean): Recommendation {
             return {
-                sourceId: sourceId,
+                sourceId: this.extensionContext.extension.id,
                 extensionId: extensionId, 
                 extensionDisplayName: extensionDisplayName,
                 description: description, 
