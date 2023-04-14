@@ -7,9 +7,9 @@ export interface IRecommendationService {
     register(recommendations: Recommendation[]): Promise<void>;
 
     /**
-     * Show a recommendation immediately
+     * Show an already-registered recommendation immediately
      */
-    show(fromExtension: string, toExtension: string): Promise<void>;
+    show(fromExtension: string, toExtension: string, overrideDescription?: string): Promise<void>;
 
     /**
      * Create a recommendation

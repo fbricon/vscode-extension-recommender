@@ -84,15 +84,19 @@ export class RecommendationServiceImpl implements IRecommendationService {
         return undefined;
     }
     
-    public async show(fromExtension: string, toExtension: string): Promise<void> {
+    public async show(fromExtension: string, toExtension: string, overrideDescription?: string): Promise<void> {
         // Show a single recommendation immediately
         if(isExtensionInstalled(fromExtension) && !isExtensionInstalled(toExtension)) {
-            const model: RecommendationModel|undefined = await this.storageService.read();
+            const model: RecommendationModel|undefined = await this.storageService.readRecommendationModel();
             if( model ) {
                 const rec: Recommendation | undefined = model.recommendations.find((x) => x.extensionId === toExtension && x.sourceId === fromExtension);
                 if( rec ) {
                     const displayName = rec.extensionDisplayName || rec.extensionId;
-                    const msg = this.collectMessage(toExtension, displayName, [rec]);
+                    const recToUse: Recommendation = {...rec};
+                    if( overrideDescription ) {
+                        recToUse.description = overrideDescription;
+                    }
+                    const msg = this.collectMessage(toExtension, displayName, [recToUse]);
                     this.displaySingleRecommendation(toExtension, displayName, 1, msg);
                 }
             }
@@ -104,7 +108,7 @@ export class RecommendationServiceImpl implements IRecommendationService {
         await new Promise(resolve => setTimeout(resolve, 6000));
         // Then show the dialogs
         const filterUnique = (value: any, index: number, self: any[]): boolean => self.indexOf(value) === index;
-        const model: RecommendationModel|undefined = await this.storageService.read();        
+        const model: RecommendationModel|undefined = await this.storageService.readRecommendationModel();        
         if( model ) {
             const recommendedExtension: string[] = model.recommendations
                 .map((x) => x.extensionId)
@@ -129,26 +133,28 @@ export class RecommendationServiceImpl implements IRecommendationService {
         this.displaySingleRecommendation(id, displayName, count, msg);
     }
 
-    private collectMessage(id: string, displayName: string, recommendationsForId: Recommendation[]) {
+    private collectMessage(id: string, displayName: string, recommendationsForId: Recommendation[]): string {
         const count = recommendationsForId.length;
         if( count === 1 ) {
             const fromExtensionId = recommendationsForId[0].sourceId;
             const fromExtensionName = getInstalledExtensionName(fromExtensionId) || fromExtensionId;
             const msg: string = `${fromExtensionName} recommends you install ${displayName}:\n${recommendationsForId[0].description}`
             return msg;
-        } else {
-            const lines: string[] = [];
-            lines.push(`${count} extensions recommend you install ${displayName}`);
-            for( let i = 0; i < recommendationsForId.length; i++ ) {
-                const fromExtensionId = recommendationsForId[i].sourceId;
+        } else if( count > 1 ) {
+            const countMessage = `${count} extensions recommend you install ${displayName}. `;
+            const recommenderNames: string[] = recommendationsForId.map((x) => {
+                const fromExtensionId = x.sourceId;
                 const fromExtensionName = getInstalledExtensionName(fromExtensionId) || fromExtensionId;
-                const desc = recommendationsForId[i].description;
-                const safeDescription = desc && desc.length > 0 ? desc : "No explanation specified";
-                const msg: string = `${fromExtensionName}: ${safeDescription}`
-                lines.push(msg);
-            }
-            const finalMsg = lines.join("\n");
+                return fromExtensionName;
+
+            });
+            const lastName: string = recommenderNames[recommenderNames.length-1];
+            const withoutLast: string[] = recommenderNames.slice(0, -1);
+            const withoutLastAddCommas: string = withoutLast.join(", ");
+            const finalMsg = countMessage + "The recommending extensions are " + withoutLastAddCommas + " and " + lastName + ". ";
             return finalMsg;
+        } else {
+            return "An unknown extension recommends that you also install " + displayName;
         }
     }
 

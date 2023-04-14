@@ -36,7 +36,7 @@ export class StorageServiceImpl implements IStorageService {
         }
         this.lock();
         try {
-            const model: RecommendationModel = await this.loadOrDefault();
+            const model: RecommendationModel = await this.loadOrDefaultRecommendationModel();
             const model2 = await runnable(model);
             return await this.save(model2);
         } finally {
@@ -61,25 +61,25 @@ export class StorageServiceImpl implements IStorageService {
         return b;
     }
 
-    public async read(): Promise<RecommendationModel | undefined> {
-        return this.load();
+    public async readRecommendationModel(): Promise<RecommendationModel | undefined> {
+        return this.loadRecommendationModel();
     }
 
-    private async load(): Promise<RecommendationModel | undefined> {
+    private async loadRecommendationModel(): Promise<RecommendationModel | undefined> {
         const json = await this.readFromFile(StorageServiceImpl.PERSISTENCE_FILENAME);
         if (json) {
             return JSON.parse(json) as RecommendationModel;
         }
         return undefined;
     }
-    private async loadOrDefault(): Promise<RecommendationModel> {
+    private async loadOrDefaultRecommendationModel(): Promise<RecommendationModel> {
         const def: RecommendationModel = {
             lastUpdated: Date.now(),
             sessionId: env.sessionId,
             sessionTimestamp: Date.now(),
             recommendations: []
         }
-        let ret = await this.load();
+        let ret = await this.loadRecommendationModel();
         if( !ret ) {
             return def;
         }
