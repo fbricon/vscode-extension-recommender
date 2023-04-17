@@ -1,6 +1,6 @@
 {
   "name": "@redhat-developer/vscode-extension-recommender",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "description": "Manages extension recommendations for VS Code",
   "main": "lib/index.js",
   "types": "lib",

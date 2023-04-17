@@ -1,11 +1,18 @@
 import { TelemetryService } from "@redhat-developer/vscode-redhat-telemetry/lib";
 import path from "path";
-import { ExtensionContext } from "vscode";
+import { ExtensionContext, commands } from "vscode";
 import { Recommendation, RecommendationModel, UserChoice } from "../recommendationModel";
 import { IRecommendationService } from "../recommendationService";
 import { IStorageService } from "../storageService";
 import { StorageServiceImpl } from "./storageServiceImpl";
 import { getInstalledExtensionName, isExtensionInstalled, promptUserUtil, installExtensionUtil } from "./vscodeUtil";
+
+export const filterUnique = (value: any, index: number, self: any[]): boolean => self.indexOf(value) === index;
+
+/**
+* Command string to render markdown string to html string
+*/
+export const COMMAND_MARKDOWN_API_RENDER = 'markdown.api.render';
 
 export class RecommendationServiceImpl implements IRecommendationService {
     private storageService: IStorageService;
@@ -107,7 +114,6 @@ export class RecommendationServiceImpl implements IRecommendationService {
         // wait 6 seconds for other tools to start up
         await new Promise(resolve => setTimeout(resolve, 6000));
         // Then show the dialogs
-        const filterUnique = (value: any, index: number, self: any[]): boolean => self.indexOf(value) === index;
         const model: RecommendationModel|undefined = await this.storageService.readRecommendationModel();        
         if( model ) {
             const recommendedExtension: string[] = model.recommendations
@@ -152,7 +158,9 @@ export class RecommendationServiceImpl implements IRecommendationService {
             const withoutLast: string[] = recommenderNames.slice(0, -1);
             const withoutLastAddCommas: string = withoutLast.join(", ");
             const finalMsg = countMessage + "The recommending extensions are " + withoutLastAddCommas + " and " + lastName + ". ";
-            return finalMsg;
+            const cmdId = this.getCommandIdForExtension(id);
+            const tellMeMore = `[check details](command:${cmdId})`
+            return finalMsg + tellMeMore;
         } else {
             return "An unknown extension recommends that you also install " + displayName;
         }
@@ -166,6 +174,10 @@ export class RecommendationServiceImpl implements IRecommendationService {
 
     private async displaySingleRecommendation(id: string, extensionDisplayName: string, 
         recommenderCount: number, msg: string) {
+
+        // Register command before prompting the user
+        this.registerCommandForId(id);
+
         const choice = await promptUserUtil(msg);
         if (choice) {
             this.fireTelemetrySuccess(id, recommenderCount, choice);
@@ -177,6 +189,41 @@ export class RecommendationServiceImpl implements IRecommendationService {
                 }
             }
         }
+    }
+
+    private async registerCommandForId(id: string) {
+        const commandId = this.getCommandIdForExtension(id);
+        const ret: string[] = await commands.getCommands();
+        if( !ret.includes(commandId)) {
+            try {
+                const cmdResult = commands.registerCommand(commandId, context => {
+                    this.runShowMarkdownCommand(id);
+                });
+                this.extensionContext.subscriptions.push(cmdResult);
+            } catch( err ) {
+                // Do nothing, might be a race condition / duplicate
+            }
+        }
+    }
+
+    private getCommandIdForExtension(id: string) {
+        return "_vscode-extension-recommender.showMarkdown." + id;
+    }
+
+    private async runShowMarkdownCommand(id: string) {
+        console.log("Showing webview for " + id);
+        const model: RecommendationModel|undefined = await this.storageService.readRecommendationModel();        
+        if( model ) {
+            const recommendedExtension: Recommendation[] = model.recommendations
+                .filter((x) => x.extensionId === id)
+                .filter(filterUnique)
+                .filter((x) => !isExtensionInstalled(x.extensionId));
+            const displayName = this.findMode(recommendedExtension.map((x) => x.extensionDisplayName)) || id;
+            const header = "# Extensions recommending " + displayName;
+            const htmlBody = await commands.executeCommand(COMMAND_MARKDOWN_API_RENDER, header);
+            console.log("\n\n\nhtml body is " + htmlBody + "\n\n\n");
+        }
+
     }
 
     private async markIgnored(id: string) {
