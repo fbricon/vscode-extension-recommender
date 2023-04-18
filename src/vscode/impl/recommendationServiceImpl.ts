@@ -6,6 +6,7 @@ import { IRecommendationService } from "../recommendationService";
 import { IStorageService } from "../storageService";
 import { StorageServiceImpl } from "./storageServiceImpl";
 import { getInstalledExtensionName, isExtensionInstalled, promptUserUtil, installExtensionUtil } from "./vscodeUtil";
+import { MarkdownWebviewUtility } from "./util/MarkdownWebviewUtility";
 
 export const filterUnique = (value: any, index: number, self: any[]): boolean => self.indexOf(value) === index;
 
@@ -219,9 +220,15 @@ export class RecommendationServiceImpl implements IRecommendationService {
                 .filter(filterUnique)
                 .filter((x) => !isExtensionInstalled(x.extensionId));
             const displayName = this.findMode(recommendedExtension.map((x) => x.extensionDisplayName)) || id;
-            const header = "# Extensions recommending " + displayName;
-            const htmlBody = await commands.executeCommand(COMMAND_MARKDOWN_API_RENDER, header);
-            console.log("\n\n\nhtml body is " + htmlBody + "\n\n\n");
+            const header = `# Extensions recommending ${displayName}\n`;
+            const lines: string[] = [];
+            for( let i = 0; i < recommendedExtension.length; i++ ) {
+                const r = recommendedExtension[i];
+                lines.push("## " + getInstalledExtensionName(r.sourceId));
+                lines.push(r.description);
+            }
+            const mdString = header + lines.join("\n");
+            new MarkdownWebviewUtility().show(mdString, "Recommendations: " + displayName);
         }
 
     }

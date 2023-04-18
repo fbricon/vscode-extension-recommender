@@ -12,7 +12,7 @@ export interface IRecommendationService {
     show(fromExtension: string, toExtension: string, overrideDescription?: string): Promise<void>;
 
     /**
-     * Create a recommendation
+     * Convenience function to help create a recommendation
      * @param extensionId 
      * @param extensionDisplayName 
      * @param description 
