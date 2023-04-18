@@ -105,7 +105,7 @@ export class RecommendationServiceImpl implements IRecommendationService {
                         recToUse.description = overrideDescription;
                     }
                     const msg = this.collectMessage(toExtension, displayName, [recToUse]);
-                    this.displaySingleRecommendation(toExtension, displayName, 1, msg);
+                    this.displaySingleRecommendation(toExtension, displayName, [recToUse.sourceId], msg);
                 }
             }
         }
@@ -137,7 +137,7 @@ export class RecommendationServiceImpl implements IRecommendationService {
             return;
         const displayName = this.findMode(recommendationsForId.map((x) => x.extensionDisplayName)) || id;
         const msg = this.collectMessage(id, displayName, recommendationsForId);
-        this.displaySingleRecommendation(id, displayName, count, msg);
+        this.displaySingleRecommendation(id, displayName, recommendationsForId.map((x) => x.sourceId), msg);
     }
 
     private collectMessage(id: string, displayName: string, recommendationsForId: Recommendation[]): string {
@@ -174,14 +174,14 @@ export class RecommendationServiceImpl implements IRecommendationService {
     }
 
     private async displaySingleRecommendation(id: string, extensionDisplayName: string, 
-        recommenderCount: number, msg: string) {
+        recommenderList: string[], msg: string) {
 
         // Register command before prompting the user
         this.registerCommandForId(id);
 
         const choice = await promptUserUtil(msg);
         if (choice) {
-            this.fireTelemetrySuccess(id, recommenderCount, choice);
+            this.fireTelemetrySuccess(id, recommenderList, choice);
             if( choice === UserChoice.Never) {
                 await this.markIgnored(id);
             } else {
@@ -247,13 +247,13 @@ export class RecommendationServiceImpl implements IRecommendationService {
         });
     }
 
-    private async fireTelemetrySuccess(target: string, recommenderCount: number, choice: string) {
+    private async fireTelemetrySuccess(target: string, recommenderList: string[], choice: string) {
         if( this.telemetryService ) {
             this.telemetryService.send({
                 name: "recommendation",
                 properties: {
                     recommendation: target,
-                    recommenderCount: recommenderCount,
+                    recommenders: recommenderList,
                     choice: choice.toString()
                 }
             });
