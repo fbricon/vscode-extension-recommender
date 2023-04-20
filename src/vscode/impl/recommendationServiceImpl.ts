@@ -22,11 +22,14 @@ export class RecommendationServiceImpl implements IRecommendationService {
     constructor(context: ExtensionContext, telemetryService?: TelemetryService) {
         this.extensionContext = context;
         this.telemetryService = telemetryService;
-        const storagePath = this.getRecommendationWorkingDir(context);
-        this.storageService = new StorageServiceImpl(storagePath);
+        this.storageService = this.createStorageService(context);
     }
 
-    private getRecommendationWorkingDir(context: ExtensionContext): string {
+    protected createStorageService(context: ExtensionContext): IStorageService {
+        const storagePath = this.getRecommendationWorkingDir(context);
+        return new StorageServiceImpl(storagePath);
+    }
+    protected getRecommendationWorkingDir(context: ExtensionContext): string {
         return path.resolve(context.globalStorageUri.fsPath, '..', 'vscode-extension-recommender');
     }
 
@@ -82,7 +85,7 @@ export class RecommendationServiceImpl implements IRecommendationService {
         return newSession;
     }
 
-    private findRecommendation(needleFrom: string, needleTo: string, haystack: Recommendation[]): Recommendation | undefined {
+    protected findRecommendation(needleFrom: string, needleTo: string, haystack: Recommendation[]): Recommendation | undefined {
         for( let i = 0; i < haystack.length; i++ ) {
             if( haystack[i].sourceId === needleFrom && 
                 haystack[i].extensionId === needleTo ) {
@@ -93,10 +96,12 @@ export class RecommendationServiceImpl implements IRecommendationService {
     }
     
     public async show(fromExtension: string, toExtension: string, overrideDescription?: string): Promise<void> {
-        // Show a single recommendation immediately
+        // Show a single recommendation immediately, if certain conditions are met
+        // Specifically, if the recommender is installed, and the recommended is not installed, 
+        // and the recommended has not been timelocked in this session
         if(isExtensionInstalled(fromExtension) && !isExtensionInstalled(toExtension)) {
             const model: RecommendationModel|undefined = await this.storageService.readRecommendationModel();
-            if( model ) {
+            if( model && !model.timelocked.includes(toExtension) ) {
                 const rec: Recommendation | undefined = model.recommendations.find((x) => x.extensionId === toExtension && x.sourceId === fromExtension);
                 if( rec ) {
                     const displayName = rec.extensionDisplayName || rec.extensionId;
@@ -104,7 +109,11 @@ export class RecommendationServiceImpl implements IRecommendationService {
                     if( overrideDescription ) {
                         recToUse.description = overrideDescription;
                     }
-                    const msg = this.collectMessage(toExtension, displayName, [recToUse]);
+                    const recommendationsForId: Recommendation[] = 
+                        model.recommendations.filter((x: Recommendation) => x.extensionId === toExtension)
+                        .filter((x: Recommendation) => isExtensionInstalled(x.sourceId));
+        
+                    const msg = this.collectShowNowMessage(toExtension, displayName, recToUse, recommendationsForId);
                     this.displaySingleRecommendation(toExtension, displayName, [recToUse.sourceId], msg);
                 }
             }
@@ -127,11 +136,12 @@ export class RecommendationServiceImpl implements IRecommendationService {
         }
     }
 
-    private async showStartupRecommendationsForSingleExtension( model: RecommendationModel, id: string): Promise<void> {
+    protected async showStartupRecommendationsForSingleExtension( model: RecommendationModel, id: string): Promise<void> {
         const recommendationsForId: Recommendation[] = 
             model.recommendations.filter((x: Recommendation) => x.extensionId === id)
             .filter((x: Recommendation) => isExtensionInstalled(x.sourceId));
-        const allIgnored: boolean = recommendationsForId.filter((x) => x.userIgnored === false).length === 0;
+        const ignoredCount = recommendationsForId.filter((x) => x.userIgnored === true).length;
+        const allIgnored: boolean = recommendationsForId.length === ignoredCount;
         const count = recommendationsForId.length;
         if( count === 0 || allIgnored) 
             return;
@@ -140,48 +150,99 @@ export class RecommendationServiceImpl implements IRecommendationService {
         this.displaySingleRecommendation(id, displayName, recommendationsForId.map((x) => x.sourceId), msg);
     }
 
-    private collectMessage(id: string, displayName: string, recommendationsForId: Recommendation[]): string {
+    protected safeDescriptionWithPeriod(description: string): string {
+        const trimmed = description.trim();
+        const lastChar = trimmed.charAt(trimmed.length - 1);
+        if( ![".","!","?"].includes(lastChar)) {
+            return trimmed + ".";
+        }
+        return description;
+    }
+    protected collectMessage(id: string, displayName: string, recommendationsForId: Recommendation[]): string {
         const count = recommendationsForId.length;
         if( count === 1 ) {
             const fromExtensionId = recommendationsForId[0].sourceId;
             const fromExtensionName = getInstalledExtensionName(fromExtensionId) || fromExtensionId;
-            const msg: string = `${fromExtensionName} recommends you install ${displayName}:\n${recommendationsForId[0].description}`
+            const safeDesc = this.safeDescriptionWithPeriod(recommendationsForId[0].description);
+            const msg: string = `${fromExtensionName} recommends you install "${displayName}":\n${safeDesc} `
             return msg;
         } else if( count > 1 ) {
-            const countMessage = `${count} extensions recommend you install ${displayName}. `;
-            const recommenderNames: string[] = recommendationsForId.map((x) => {
-                const fromExtensionId = x.sourceId;
-                const fromExtensionName = getInstalledExtensionName(fromExtensionId) || fromExtensionId;
-                return fromExtensionName;
-
-            });
-            const lastName: string = recommenderNames[recommenderNames.length-1];
-            const withoutLast: string[] = recommenderNames.slice(0, -1);
-            const withoutLastAddCommas: string = withoutLast.join(", ");
-            const finalMsg = countMessage + "The recommending extensions are " + withoutLastAddCommas + " and " + lastName + ". ";
-            const cmdId = this.getCommandIdForExtension(id);
-            const tellMeMore = `[check details](command:${cmdId})`
-            return finalMsg + tellMeMore;
+            return this.collectMultiCountMessage(id, displayName, recommendationsForId);
         } else {
-            return "An unknown extension recommends that you also install " + displayName;
+            return "An unknown extension recommends that you also install \"" + displayName + "\".";
         }
     }
 
-    private findMode(arr: string[]) {
+    protected collectShowNowMessage(id: string, displayName: string, primary: Recommendation, recommendationsForId: Recommendation[]): string {
+        const fromExtensionId = primary.sourceId;
+        const fromExtensionName = getInstalledExtensionName(fromExtensionId) || fromExtensionId;
+        const msg: string = `${fromExtensionName} recommends you install "${displayName}":\n${recommendationsForId[0].description}`
+
+        const count = recommendationsForId.length;
+        if( count === 1 ) {
+            return msg;
+        } else if( count > 1 ) {
+            const clone = [...recommendationsForId].filter((x) => x.sourceId !== primary.sourceId || x.extensionId !== primary.extensionId);
+            return this.collectMultiCountMessage(id, displayName, clone);
+        } else {
+            return "An unknown extension recommends that you also install \"" + displayName + "\".";
+        }
+    }
+
+    protected collectMultiCountMessage(id: string, displayName: string, recommendationsForId: Recommendation[]) : string {
+        const ignoredList = recommendationsForId.filter((x)=>x.userIgnored);
+        const notIgnoredList = recommendationsForId.filter((x) => x.userIgnored === false);
+        const ignoredCount = ignoredList.length;
+        const notIgnoredCount = notIgnoredList.length;
+
+        let countMessage = "";
+        if( ignoredCount === 0 && notIgnoredCount > 0 ) {
+            const singlePlural = notIgnoredCount > 1 ? "extensions recommend" : "extension recommends";
+            countMessage = `${notIgnoredCount} ${singlePlural} you install "${displayName}". `;
+        } else if( notIgnoredCount === 0 && ignoredCount > 0 ) {
+            // TODO this really should never happen. If they're all ignored it shouldn't show. 
+            const singlePlural = ignoredCount > 1 ? "extensions recommend" : "extension recommends";
+            countMessage = `${ignoredCount} previously ignored ${singlePlural} you install "${displayName}". `;
+        } else {
+            // one or more of ignored and not-ignored / new recommendations
+            const rec = recommendationsForId.length > 1 ? "recommend" : "recommends";
+            const spNotIgnored = notIgnoredCount > 1 ? "extensions" : "extension";
+            const spIgnored = ignoredCount > 1 ? "extensions" : "extension";
+            countMessage = `${notIgnoredCount} new ${spNotIgnored} and ${ignoredCount} previously ignored ${spIgnored} ${rec} you install "${displayName}". `;
+        }
+
+        const recommenderNames: string[] = recommendationsForId.map((x) => {
+            const fromExtensionId = x.sourceId;
+            const fromExtensionName = getInstalledExtensionName(fromExtensionId) || fromExtensionId;
+            return fromExtensionName;
+
+        });
+        const lastName: string = "\"" + recommenderNames[recommenderNames.length-1] + "\"";
+        const withoutLast: string[] = recommenderNames.slice(0, -1).map((x) => "\"" + x + "\"");
+        const withoutLastAddCommas: string = withoutLast.join(", ");
+        const finalMsg = countMessage + "The recommending extensions are " + withoutLastAddCommas + " and " + lastName + ". ";
+        const cmdId = this.getCommandIdForExtension(id);
+        const tellMeMore = `[More...](command:${cmdId})`
+        return finalMsg + tellMeMore;
+    }
+
+    protected findMode(arr: string[]) {
         return arr.sort((a,b) =>
             arr.filter(v => v===a).length - arr.filter(v => v===b).length
         ).pop();
     }
 
-    private async displaySingleRecommendation(id: string, extensionDisplayName: string, 
+    protected async displaySingleRecommendation(id: string, extensionDisplayName: string, 
         recommenderList: string[], msg: string) {
-
         // Register command before prompting the user
         this.registerCommandForId(id);
-
         const choice = await promptUserUtil(msg);
+
+        // Timelock this regardless of what the user selects.
+        await this.timelockRecommendationFor(id);
         if (choice) {
             this.fireTelemetrySuccess(id, recommenderList, choice);
+    
             if( choice === UserChoice.Never) {
                 await this.markIgnored(id);
             } else {
@@ -192,7 +253,16 @@ export class RecommendationServiceImpl implements IRecommendationService {
         }
     }
 
-    private async registerCommandForId(id: string) {
+    protected async timelockRecommendationFor(id: string): Promise<void> {
+        await this.storageService.runWithLock(async (model: RecommendationModel): Promise<RecommendationModel | undefined> => {
+            if( !model.timelocked.includes(id)) {
+                model.timelocked.push(id);
+                return model;
+            }
+            return undefined;
+        });
+    }
+    protected async registerCommandForId(id: string) {
         const commandId = this.getCommandIdForExtension(id);
         const ret: string[] = await commands.getCommands();
         if( !ret.includes(commandId)) {
@@ -207,12 +277,11 @@ export class RecommendationServiceImpl implements IRecommendationService {
         }
     }
 
-    private getCommandIdForExtension(id: string) {
+    protected getCommandIdForExtension(id: string) {
         return "_vscode-extension-recommender.showMarkdown." + id;
     }
 
-    private async runShowMarkdownCommand(id: string) {
-        console.log("Showing webview for " + id);
+    protected async runShowMarkdownCommand(id: string) {
         const model: RecommendationModel|undefined = await this.storageService.readRecommendationModel();        
         if( model ) {
             const recommendedExtension: Recommendation[] = model.recommendations
@@ -226,14 +295,21 @@ export class RecommendationServiceImpl implements IRecommendationService {
                 const r = recommendedExtension[i];
                 lines.push("## " + getInstalledExtensionName(r.sourceId));
                 lines.push(r.description);
+                if( r.userIgnored ) {
+                    lines.push("This recommendation was previously ignored by user.");
+                }
             }
             const mdString = header + lines.join("\n");
+            // TODO
+            // Could persist this mdString into a special file and just open it 
+            // via the following:
+            // commands.executeCommand("markdown.showPreview", Uri.parse(context.asAbsolutePath('INSERT_FILE.md')));
             new MarkdownWebviewUtility().show(mdString, "Recommendations: " + displayName);
         }
 
     }
 
-    private async markIgnored(id: string) {
+    protected async markIgnored(id: string) {
         // Mark all CURRENT (not future, from a new unknown extension) 
         // recommendations to the given id. 
         const newSession = await this.storageService.runWithLock(async (model: RecommendationModel): Promise<RecommendationModel> => {
@@ -247,7 +323,7 @@ export class RecommendationServiceImpl implements IRecommendationService {
         });
     }
 
-    private async fireTelemetrySuccess(target: string, recommenderList: string[], choice: string) {
+    protected async fireTelemetrySuccess(target: string, recommenderList: string[], choice: string) {
         if( this.telemetryService ) {
             this.telemetryService.send({
                 name: "recommendation",

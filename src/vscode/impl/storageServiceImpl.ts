@@ -7,6 +7,7 @@ import { IStorageService } from '../storageService';
 export class StorageServiceImpl implements IStorageService {
     private static PERSISTENCE_FILENAME: string = 'extension-recommender.model.json';
     private static LOCK_FILENAME: string = 'extension-recommender.lock';
+    
     private storagePath: string;
 
     constructor(storagePath: string) {
@@ -22,9 +23,10 @@ export class StorageServiceImpl implements IStorageService {
 
     /**
      * Run a given runnable while ensuring only 1 client can write to the data store at a time.
-     * @returns boolean - whether vscode is in a new session vs what the data store thought
+     * I am not convinced the lock mechanism is perfect.
+     * @returns boolean - whether vscode is in a new session vs what the data store thought but only when a change to the model occurs. False otherwise
      */
-    public async runWithLock(runnable: (model: RecommendationModel) => Promise<RecommendationModel>): Promise<boolean> {
+    public async runWithLock(runnable: (model: RecommendationModel) => Promise<RecommendationModel | undefined>): Promise<boolean> {
         // TODO if we are locked, wait for unlock
         let waited = 0;
         while(this.isLocked() && waited < 10000) {
@@ -37,8 +39,21 @@ export class StorageServiceImpl implements IStorageService {
         this.lock();
         try {
             const model: RecommendationModel = await this.loadOrDefaultRecommendationModel();
+            const now = Date.now();
+            let newSession = false;
+            if( env.sessionId !== model.sessionId) {
+                model.sessionId = env.sessionId;
+                model.sessionTimestamp = now;
+                model.timelocked = [];
+                newSession = true;
+            }
+            model.lastUpdated = now;    
             const model2 = await runnable(model);
-            return await this.save(model2);
+            if( model2 ) {
+                model.lastUpdated = Date.now();
+                await this.save(model2);
+            }
+            return newSession;
         } finally {
             this.unlock();
         }
@@ -75,9 +90,10 @@ export class StorageServiceImpl implements IStorageService {
     private async loadOrDefaultRecommendationModel(): Promise<RecommendationModel> {
         const def: RecommendationModel = {
             lastUpdated: Date.now(),
-            sessionId: env.sessionId,
+            sessionId: "",
             sessionTimestamp: Date.now(),
-            recommendations: []
+            recommendations: [],
+            timelocked: []
         }
         let ret = await this.loadRecommendationModel();
         if( !ret ) {
@@ -86,18 +102,9 @@ export class StorageServiceImpl implements IStorageService {
         return ret;
     }
 
-    private async save(model: RecommendationModel): Promise<boolean> {
-        const now = Date.now();
-        let newSession = false;
-        if( env.sessionId !== model.sessionId) {
-            model.sessionId = env.sessionId;
-            model.sessionTimestamp = now;
-            newSession = true;
-        }
-        model.lastUpdated = now;
+    private async save(model: RecommendationModel): Promise<void> {
         const json = JSON.stringify(model);
         await this.writeToFile(StorageServiceImpl.PERSISTENCE_FILENAME, json);
-        return newSession;
     }
 
     private async readFromFile(filename: string): Promise<string | undefined> {

@@ -13,5 +13,5 @@ export interface IStorageService {
      * @param runnable - A runnable that may make changes and persist them to the recommendation model
      * @returns boolean - true if this is a new workspace session, false otherwise
      */
-    runWithLock(runnable: (model: RecommendationModel) => Promise<RecommendationModel>): Promise<boolean>;
+    runWithLock(runnable: (model: RecommendationModel) => Promise<RecommendationModel | undefined>): Promise<boolean>;
 }

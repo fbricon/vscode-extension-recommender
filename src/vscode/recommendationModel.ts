@@ -2,7 +2,8 @@ export interface RecommendationModel {
     lastUpdated: number,
     sessionId: string,
     sessionTimestamp: number,
-    recommendations: Recommendation[]
+    recommendations: Recommendation[],
+    timelocked: string[]
 }
 
 export interface Recommendation {
