@@ -289,10 +289,11 @@ export class RecommendationServiceImpl implements IRecommendationService {
                 .filter(filterUnique)
                 .filter((x) => !isExtensionInstalled(x.extensionId));
             const displayName = this.findMode(recommendedExtension.map((x) => x.extensionDisplayName)) || id;
-            const header = `# Extensions recommending ${displayName}\n`;
+            const sorted: Recommendation[] = recommendedExtension.sort((x, y) => x.userIgnored === y.userIgnored ? 0 : x.userIgnored ? 1 : -1)
+            const header = `# Extensions recommending "${displayName}"\n`;
             const lines: string[] = [];
-            for( let i = 0; i < recommendedExtension.length; i++ ) {
-                const r = recommendedExtension[i];
+            for( let i = 0; i < sorted.length; i++ ) {
+                const r = sorted[i];
                 lines.push("## " + getInstalledExtensionName(r.sourceId));
                 lines.push(r.description);
                 if( r.userIgnored ) {
