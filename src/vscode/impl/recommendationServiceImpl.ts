@@ -254,7 +254,7 @@ export class RecommendationServiceImpl implements IRecommendationService {
                 await this.markIgnored(id);
             } else {
                 if (choice === UserChoice.Install) {
-                    await installExtensionUtil(id, extensionDisplayName, 6000);
+                    await installExtensionUtil(id, extensionDisplayName, 30000);
                 }
             }
         }
