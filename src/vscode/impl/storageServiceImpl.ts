@@ -1,8 +1,10 @@
 import * as fs from 'fs';
 import path from "path";
-import { env } from "vscode";
+import { env, workspace } from "vscode";
 import { RecommendationModel } from '../recommendationModel';
 import { IStorageService } from '../storageService';
+import { deleteFile, exists, mkdir, readFile, writeFile } from './util/fsUtil';
+import { generateNonce } from './util/MarkdownWebviewUtility';
 
 export class StorageServiceImpl implements IStorageService {
     private static PERSISTENCE_FILENAME: string = 'extension-recommender.model.json';
@@ -12,9 +14,6 @@ export class StorageServiceImpl implements IStorageService {
 
     constructor(storagePath: string) {
         this.storagePath = storagePath;
-        if (!fs.existsSync(storagePath)) {
-            fs.mkdirSync(storagePath, { recursive: true });
-        }
     }
 
     private async delay(ms: number): Promise<void> {
@@ -27,16 +26,11 @@ export class StorageServiceImpl implements IStorageService {
      * @returns boolean - whether vscode is in a new session vs what the data store thought but only when a change to the model occurs. False otherwise
      */
     public async runWithLock(runnable: (model: RecommendationModel) => Promise<RecommendationModel | undefined>): Promise<boolean> {
-        // TODO if we are locked, wait for unlock
-        let waited = 0;
-        while(this.isLocked() && waited < 10000) {
-            await this.delay(100);
-            waited += 100;
+        await this.ensureStorageFolderExists();
+        const acquired = await this.acquireLock(15);
+        if( !acquired ) {
+            return Promise.reject("Unable to acquire a lock to modify the recommendation model.");
         }
-        if( waited >= 10000 || this.isLocked()) {
-            return Promise.reject("Unable to get a lock on recommendations file");
-        }
-        this.lock();
         try {
             const model: RecommendationModel = await this.loadOrDefaultRecommendationModel();
             const now = Date.now();
@@ -59,29 +53,94 @@ export class StorageServiceImpl implements IStorageService {
         }
     }
 
-    private async lock(): Promise<void> {
-        const file = this.resolvePath(StorageServiceImpl.LOCK_FILENAME);
-        await this.writeToFile(file, ""+Date.now());
+    private async acquireLock(seconds: number): Promise<boolean> {
+        const endTime = Date.now() + (1000*seconds);
+        while(Date.now() <= endTime) {
+            const ret: boolean = await this.acquireLockOneTry(endTime);
+            if( ret ) {
+                return true;
+            }
+        }
+        return false;
     }
-    private async unlock(): Promise<void> {
+    private async acquireLockOneTry(endTime: number): Promise<boolean> {
+        await this.deleteOldLockFile();
         const file = this.resolvePath(StorageServiceImpl.LOCK_FILENAME);
-        if (fs.existsSync(file)) {
-            fs.unlinkSync(file);
+        while( (await exists(file)) && Date.now() < endTime) {
+            await this.delay(25);
+        }
+        if( Date.now() >= endTime) {
+            // Took too long
+            return false;
+        }
+        // We have a chance to write a lock. Let's try it. 
+        const nonce = generateNonce();
+        const contents = Date.now() + "\n" + nonce;
+        await this.writeToFile(file, contents);
+        // Give some time for someone else to try to write to the file / race condition
+        await this.delay(100);
+        // verify we are still the nonce in the file
+        const nonce2 = await this.getNonceFromLockFile();
+        if( nonce2 && nonce2 === nonce) {
+            return true;
+        }
+        return false;
+    }
+
+    private async getTimeFromLockFile(): Promise<number | undefined> {
+        const existsVar: boolean = await exists(this.resolvePath(StorageServiceImpl.LOCK_FILENAME));
+        if( existsVar ) {
+            const s: string | undefined = await this.readFromFileOrUndefined(StorageServiceImpl.LOCK_FILENAME);
+            if( s ) {
+                const lines: string[] = s.split("\n");
+                if( lines && lines.length === 2 && lines[0]) {
+                    return parseInt(lines[0]);
+                }
+            }
+        }
+        return undefined;
+    }
+
+    private async getNonceFromLockFile(): Promise<string | undefined> {
+        const existsVar: boolean = await exists(this.resolvePath(StorageServiceImpl.LOCK_FILENAME));
+        if( existsVar ) {
+            const s: string | undefined = await this.readFromFileOrUndefined(StorageServiceImpl.LOCK_FILENAME);
+            if( s ) {
+                const lines: string[] = s.split("\n");
+                if( lines && lines.length === 2 && lines[0]) {
+                    return lines[1];
+                }
+            }
+        }
+        return undefined;
+    }
+
+    private async deleteOldLockFile() {
+        const tooOld = Date.now() - (1000 * 30); // 30 seconds lock is too long, man
+        const ts = await this.getTimeFromLockFile();
+        if( ts ) {
+            if( ts < tooOld ) {
+                this.unlock();
+            }
         }
     }
-    private isLocked(): boolean {
-        const file = this.resolvePath(StorageServiceImpl.LOCK_FILENAME);
-        const b = fs.existsSync(file);
-        console.log("Checking for lock on " + file + ": " + b);
-        return b;
+
+    private async unlock(): Promise<void> {
+        try {
+            const file = this.resolvePath(StorageServiceImpl.LOCK_FILENAME);
+            await deleteFile(file);
+        } catch( err ) {
+            // File did not exist probably, ignore
+        }
     }
 
     public async readRecommendationModel(): Promise<RecommendationModel | undefined> {
+        await this.ensureStorageFolderExists();
         return this.loadRecommendationModel();
     }
 
     private async loadRecommendationModel(): Promise<RecommendationModel | undefined> {
-        const json = await this.readFromFile(StorageServiceImpl.PERSISTENCE_FILENAME);
+        const json = await this.readFromFileOrUndefined(StorageServiceImpl.PERSISTENCE_FILENAME);
         if (json) {
             return JSON.parse(json) as RecommendationModel;
         }
@@ -102,6 +161,10 @@ export class StorageServiceImpl implements IStorageService {
         return ret;
     }
 
+    private resolvePath(filename: string): string {
+        return path.resolve(this.storagePath, filename);
+    }
+
     private async save(model: RecommendationModel): Promise<void> {
         const json = JSON.stringify(model);
         await this.writeToFile(StorageServiceImpl.PERSISTENCE_FILENAME, json);
@@ -109,21 +172,21 @@ export class StorageServiceImpl implements IStorageService {
 
     private async readFromFile(filename: string): Promise<string | undefined> {
         const filePath = this.resolvePath(filename);
-        if (!fs.existsSync(filePath))
-            return undefined;
-        return fs.readFileSync(filePath, 'utf8');
+        return await readFile(filePath);
     }
-
-    private async writeToFile(filename: string, value: string): Promise<boolean> {
+    private async readFromFileOrUndefined(filename: string): Promise<string | undefined> {
         try {
-            fs.writeFileSync(this.resolvePath(filename), value);
-            return true;
+            return await this.readFromFile(filename);
         } catch( err ) {
-            return false;
+            return undefined;
         }
     }
-    private resolvePath(filename: string): string {
-        const filePath = path.resolve(this.storagePath, filename);
-        return filePath;
+
+    private async writeToFile(filename: string, value: string): Promise<void> {
+        await writeFile(this.resolvePath(filename), value);
+    }
+
+    private async ensureStorageFolderExists(): Promise<void> {
+        await mkdir(this.storagePath);
     }
 }

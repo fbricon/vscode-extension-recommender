@@ -27,16 +27,8 @@ export class MarkdownWebviewUtility implements Disposable {
         this.panel.reveal(this.panel.viewColumn);
     }
 
-    protected getNonce() {
-        let text = "";
-        const possible = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-        for (let i = 0; i < 32; i++) {
-            text += possible.charAt(Math.floor(Math.random() * possible.length));
-        }
-        return text;
-    }
     protected async getHtmlContent(webview: Webview, markdownString: string, section?: string): Promise<string> {
-        const nonce: string = this.getNonce();
+        const nonce: string = generateNonce();
         const body: string | undefined = await commands.executeCommand(COMMAND_MARKDOWN_API_RENDER, markdownString);
         const template = this.getFilledTemplate(webview, body || "", nonce, section);
         return template;
@@ -540,4 +532,13 @@ export class MarkdownWebviewUtility implements Disposable {
         </html>
     `;
     }
+}
+
+export const generateNonce = () => {
+    let text = "";
+    const possible = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    for (let i = 0; i < 32; i++) {
+        text += possible.charAt(Math.floor(Math.random() * possible.length));
+    }
+    return text;
 }
