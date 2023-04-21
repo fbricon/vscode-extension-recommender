@@ -1,6 +1,6 @@
 import { TelemetryService } from "@redhat-developer/vscode-redhat-telemetry/lib";
 import path from "path";
-import { ExtensionContext, commands } from "vscode";
+import { ExtensionContext, commands, window } from "vscode";
 import { Recommendation, RecommendationModel, UserChoice } from "../recommendationModel";
 import { IRecommendationService } from "../recommendationService";
 import { IStorageService } from "../storageService";
@@ -158,6 +158,15 @@ export class RecommendationServiceImpl implements IRecommendationService {
         }
         return description;
     }
+
+    protected linkToMore(id: string): string {
+        const obj = {
+            id: id
+        };
+        const encoded = encodeURIComponent(JSON.stringify(obj));
+        const tellMeMore1 = `[Learn More...](command:${this.getSingleMarkdownCommandId()}?${encoded})`;
+        return tellMeMore1;
+    }
     protected collectMessage(id: string, displayName: string, recommendationsForId: Recommendation[]): string {
         const count = recommendationsForId.length;
         if( count === 1 ) {
@@ -221,9 +230,7 @@ export class RecommendationServiceImpl implements IRecommendationService {
         const withoutLast: string[] = recommenderNames.slice(0, -1).map((x) => "\"" + x + "\"");
         const withoutLastAddCommas: string = withoutLast.join(", ");
         const finalMsg = countMessage + "The recommending extensions are " + withoutLastAddCommas + " and " + lastName + ". ";
-        const cmdId = this.getCommandIdForExtension(id);
-        const tellMeMore = `[More...](command:${cmdId})`
-        return finalMsg + tellMeMore;
+        return finalMsg + this.linkToMore(id);;
     }
 
     protected findMode(arr: string[]) {
@@ -234,8 +241,8 @@ export class RecommendationServiceImpl implements IRecommendationService {
 
     protected async displaySingleRecommendation(id: string, extensionDisplayName: string, 
         recommenderList: string[], msg: string) {
-        // Register command before prompting the user
-        this.registerCommandForId(id);
+        // Ensure command is registered before prompting the user
+        this.registerSingleMarkdownCommand();
         const choice = await promptUserUtil(msg);
 
         // Timelock this regardless of what the user selects.
@@ -262,13 +269,19 @@ export class RecommendationServiceImpl implements IRecommendationService {
             return undefined;
         });
     }
-    protected async registerCommandForId(id: string) {
-        const commandId = this.getCommandIdForExtension(id);
+
+
+    protected async registerSingleMarkdownCommand() {
+        const commandId = this.getSingleMarkdownCommandId();
         const ret: string[] = await commands.getCommands();
         if( !ret.includes(commandId)) {
             try {
-                const cmdResult = commands.registerCommand(commandId, context => {
-                    this.runShowMarkdownCommand(id);
+                const cmdResult = commands.registerCommand(commandId, async (param: any) => {
+                    if( param && param.id) {
+                        this.runShowMarkdownCommand(param.id);
+                    } else {
+                        window.showInformationMessage("Unable to show recommendation report for extension 'undefined'.");
+                    }
                 });
                 this.extensionContext.subscriptions.push(cmdResult);
             } catch( err ) {
@@ -276,10 +289,11 @@ export class RecommendationServiceImpl implements IRecommendationService {
             }
         }
     }
-
-    protected getCommandIdForExtension(id: string) {
-        return "_vscode-extension-recommender.showMarkdown." + id;
+    
+    protected getSingleMarkdownCommandId() {
+        return "_vscode-extension-recommender.showMarkdown";
     }
+
 
     protected async runShowMarkdownCommand(id: string) {
         const model: RecommendationModel|undefined = await this.storageService.readRecommendationModel();        

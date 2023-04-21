@@ -1,4 +1,4 @@
-import { commands, Disposable, ExtensionContext, ViewColumn, Webview, WebviewPanel, window } from "vscode";
+import { commands, Disposable, ViewColumn, Webview, WebviewPanel, window } from "vscode";
 import { COMMAND_MARKDOWN_API_RENDER } from "../recommendationServiceImpl";
 
 const MARKDOWN_WEBVIEW_UTIL_BODY = "MARKDOWN_WEBVIEW_UTIL_BODY";
