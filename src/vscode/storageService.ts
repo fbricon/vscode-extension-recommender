@@ -14,4 +14,14 @@ export interface IStorageService {
      * @returns boolean - true if this is a new workspace session, false otherwise
      */
     runWithLock(runnable: (model: RecommendationModel) => Promise<RecommendationModel | undefined>): Promise<boolean>;
+
+
+    /**
+     * Write contents to an arbitrary key
+     * @param key The key to write to
+     * @param contents  The contents
+     * @returns A file-system path to the output file in question. 
+     */
+    writeKey(key: string, contents: string): Promise<string|undefined>;
+
 }

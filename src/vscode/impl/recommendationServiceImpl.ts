@@ -1,6 +1,6 @@
 import { TelemetryService } from "@redhat-developer/vscode-redhat-telemetry/lib";
 import path from "path";
-import { ExtensionContext, commands, window } from "vscode";
+import { ExtensionContext, commands, window, Uri } from "vscode";
 import { Recommendation, RecommendationModel, UserChoice } from "../recommendationModel";
 import { IRecommendationService } from "../recommendationService";
 import { IStorageService } from "../storageService";
@@ -318,8 +318,13 @@ export class RecommendationServiceImpl implements IRecommendationService {
             // TODO
             // Could persist this mdString into a special file and just open it 
             // via the following:
-            // commands.executeCommand("markdown.showPreview", Uri.parse(context.asAbsolutePath('INSERT_FILE.md')));
-            new MarkdownWebviewUtility().show(mdString, "Recommendations: " + displayName);
+            const path = await this.storageService.writeKey(id, mdString);
+            if(path)
+                commands.executeCommand("markdown.showPreview", Uri.parse(path));
+            else {
+                // idk, show warning?
+            }
+            //new MarkdownWebviewUtility().show(mdString, "Recommendations: " + displayName);
         }
 
     }

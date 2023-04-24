@@ -161,6 +161,13 @@ export class StorageServiceImpl implements IStorageService {
         return ret;
     }
 
+    public async writeKey(key: string, contents: string): Promise<string|undefined> {
+        // Add a prefix so no one can overwrite the core model or lock file
+        const resolved = this.resolvePath("f_" + key);
+        await writeFile(resolved, contents);
+        return resolved;
+    }
+
     private resolvePath(filename: string): string {
         return path.resolve(this.storagePath, filename);
     }
