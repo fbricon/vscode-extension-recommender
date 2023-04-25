@@ -185,7 +185,7 @@ export class RecommendationServiceImpl implements IRecommendationService {
     protected collectShowNowMessage(id: string, displayName: string, primary: Recommendation, recommendationsForId: Recommendation[]): string {
         const fromExtensionId = primary.sourceId;
         const fromExtensionName = getInstalledExtensionName(fromExtensionId) || fromExtensionId;
-        const msg: string = `${fromExtensionName} recommends you install "${displayName}":\n${recommendationsForId[0].description}`
+        const msg: string = `"${fromExtensionName}" recommends you install "${displayName}":\n${recommendationsForId[0].description}`
 
         const count = recommendationsForId.length;
         if( count === 1 ) {
